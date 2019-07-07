@@ -132,5 +132,51 @@ ViewModelStoreから目当てのViewModelが取得される<br>
     }
 ~~~
 
+## どのように画面回転時等で値を保持するか？
+ViewModelStoreを取得している以下の処理
+~~~java
+public ViewModelStore getViewModelStore() {
+    if (getApplication() == null) {
+        throw new IllegalStateException("Your activity is not yet attached to the "
+                + "Application instance. You can't request ViewModel before onCreate call.");
+    }
+    if (mViewModelStore == null) {
+        NonConfigurationInstances nc =
+                (NonConfigurationInstances) getLastNonConfigurationInstance();
+        if (nc != null) {
+            // Restore the ViewModelStore from NonConfigurationInstances
+            mViewModelStore = nc.viewModelStore;
+        }
+        if (mViewModelStore == null) {
+            mViewModelStore = new ViewModelStore();
+        }
+    }
+    return mViewModelStore;
+}
+~~~
+### getLastNonConfigurationInstance()とは？
+Activityが回転した時のライフサイクルの中で、onStop()とonDestroy()の間で<br>
+onRetainNonConfigurationInstance() というメソッドが呼ばれる<br>
+上記メソッドをオーバーライドし、再生成したいオブジェクトを返すようにしてくと<br>
+Activity再生成後、getLastNonConfigurationInstance()で取得することができる<br>
+FragmentActivityでは、以下のようにViewModelStoreを保持している<br>
+~~~java
+@Override
+public final Object onRetainNonConfigurationInstance() {
+    Object custom = onRetainCustomNonConfigurationInstance();
 
+    FragmentManagerNonConfig fragments = mFragments.retainNestedNonConfig();
 
+    if (fragments == null && mViewModelStore == null && custom == null) {
+        return null;
+    }
+
+    NonConfigurationInstances nci = new NonConfigurationInstances();
+    nci.custom = custom;
+    nci.viewModelStore = mViewModelStore;
+    nci.fragments = fragments;
+    return nci;
+}
+~~~
+なので、ViewModelStoreは画面回転時にonRetainNonConfigurationInstanceで保持され、<br>
+getViewModelStoreでgetLastNonConfigurationInstanceから取得される
