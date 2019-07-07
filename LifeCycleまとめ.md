@@ -32,7 +32,7 @@ Lifecycleを継承している<br>
 
 ## lifecycle.addObserver(mMapsViewModel)
 ※ViewModelにLifecycleObserverを実装している<br>
-おそらくライフサイクルのコールバックが呼ばれるように設定している
+おそらくライフサイクルのコールバックが呼ばれるように設定している<br>
 ~~~java
     @Override
     public void addObserver(@NonNull LifecycleObserver observer) {

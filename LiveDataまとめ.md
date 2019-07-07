@@ -148,3 +148,92 @@ private abstract class ObserverWrapper {
     }
 ~~~
 
+## LiveData#setValue
+
+~~~java
+@MainThread
+protected void setValue(T value) {
+    assertMainThread("setValue");
+    mVersion++;
+    mData = value;
+    dispatchingValue(null);
+}
+
+@SuppressWarnings("WeakerAccess") /* synthetic access */
+void dispatchingValue(@Nullable ObserverWrapper initiator) {
+    if (mDispatchingValue) {
+        mDispatchInvalidated = true;
+        return;
+    }
+    mDispatchingValue = true;
+    do {
+        mDispatchInvalidated = false;
+        if (initiator != null) {
+            considerNotify(initiator);
+            initiator = null;
+        } else {
+            for (Iterator<Map.Entry<Observer<? super T>, ObserverWrapper>> iterator =
+                    mObservers.iteratorWithAdditions(); iterator.hasNext(); ) {
+                considerNotify(iterator.next().getValue());
+                if (mDispatchInvalidated) {
+                    break;
+                }
+            }
+        }
+    } while (mDispatchInvalidated);
+    mDispatchingValue = false;
+}
+
+private void considerNotify(ObserverWrapper observer) {
+    if (!observer.mActive) {
+        return;
+    }
+    // Check latest state b4 dispatch. Maybe it changed state but we didn't get the event yet.
+    //
+    // we still first check observer.active to keep it as the entrance for events. So even if
+    // the observer moved to an active state, if we've not received that event, we better not
+    // notify for a more predictable notification order.
+    if (!observer.shouldBeActive()) {
+        // LifecycleBoundObserver(return mOwner.getLifecycle().getCurrentState().isAtLeast(STARTED);)
+        observer.activeStateChanged(false);
+        return;
+    }
+    if (observer.mLastVersion >= mVersion) {
+        // mLastVersionは初期値-1、setValueの際にincrement
+        return;
+    }
+    observer.mLastVersion = mVersion;
+    //noinspection unchecked
+    observer.mObserver.onChanged((T) mData);
+}
+~~~
+
+## LiveData#postValue
+別スレッドからメインスレッドにsetValueをメインスレッドにpost
+~~~java
+protected void postValue(T value) {
+    boolean postTask;
+    synchronized (mDataLock) {
+        postTask = mPendingData == NOT_SET;
+        mPendingData = value;
+    }
+    if (!postTask) {
+        return;
+    }
+    ArchTaskExecutor.getInstance().postToMainThread(mPostValueRunnable);
+}
+
+private final Runnable mPostValueRunnable = new Runnable() {
+    @Override
+    public void run() {
+        Object newValue;
+        synchronized (mDataLock) {
+            newValue = mPendingData;
+            mPendingData = NOT_SET;
+        }
+        //noinspection unchecked
+        setValue((T) newValue);
+    }
+};
+~~~
+
